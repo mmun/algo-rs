@@ -2,6 +2,12 @@ use std::fmt::Debug;
 use std::cmp::Ordering::*;
 use std::mem::{self, transmute};
 
+enum FindStrategy {
+    Any,
+    Before,
+    After
+}
+
 #[derive(Debug)]
 pub struct Node<K> {
     key: K,
@@ -13,12 +19,6 @@ pub struct Node<K> {
 pub enum Tree<K> {
     Node(Box<Node<K>>),
     Empty
-}
-
-enum Strategy {
-    Any,
-    Before,
-    After
 }
 
 impl<K: Ord+Debug> Tree<K> {
@@ -34,60 +34,54 @@ impl<K: Ord+Debug> Tree<K> {
         mem::replace(self, Tree::Empty)
     }
 
-    fn find(&self, key: &K, strategy: Strategy) -> &Self {
+    fn find_mut(&mut self, key: &K, strategy: FindStrategy) -> &mut Self {
         let mut cur = self;
 
-        while let Tree::Node(ref node) = *cur {
-            match node.key.cmp(key) {
-                Less    => cur = &node.right,
-                Greater => cur = &node.left,
-                Equal   => {
-                    match strategy {
-                        Strategy::Any    => break,
-                        Strategy::Before => cur = &node.left,
-                        Strategy::After  => cur = &node.right
+        loop {
+            let temp = cur;
+            if temp.inner.is_some() {
+                cur = match temp.inner.as_mut().unwrap().key.cmp(key) {
+                    Less    => &mut temp.inner.as_mut().unwrap().right,
+                    Greater => &mut temp.inner.as_mut().unwrap().left,
+                    Equal   => {
+                        match strategy {
+                            FindStrategy::Any    => temp,
+                            FindStrategy::Before => &mut temp.inner.as_mut().unwrap().left,
+                            FindStrategy::After  => &mut temp.inner.as_mut().unwrap().right
+                        }
                     }
-                }
+                };
+            } else {
+                return temp;
             }
         }
         
         cur
     }
 
-    fn find_mut(&mut self, key: &K, strategy: Strategy) -> &mut Self {
-        unsafe {
-            transmute::<*mut Self, &mut Self>(transmute::<&Self, *mut Self>(self.find(key, strategy)))
-        }
-    }
-
-    fn first(&self) -> &Self {
+    fn first_mut(&mut self) -> &mut Self {
         let mut cur = self;
 
-        while let Tree::Node(ref node) = *cur {
-            match node.left {
-                Tree::Node(_) => cur = &node.left,
-                Tree::Empty   => break
+        loop {
+            let temp = cur;
+            cur = match temp.inner {
+                Some(ref mut node) => &mut node.left,
+                None               => return temp,
             }
         }
 
         cur
     }
 
-    fn first_mut(&mut self) -> &mut Self {
-        unsafe {
-            transmute::<*mut Self, &mut Self>(transmute::<&Self, *mut Self>(self.first()))
-        }
-    }
-
-    pub fn has(&self, key: K) -> bool {
-        match *self.find(&key, Strategy::Any) {
+    pub fn has(&mut self, key: K) -> bool {
+        match *self.find_mut(&key, FindStrategy::Any) {
             Tree::Node(_) => true,
             Tree::Empty => false
         }
     }
 
     pub fn insert(&mut self, key: K) {
-        let tree = self.find_mut(&key, Strategy::After);
+        let tree = self.find_mut(&key, FindStrategy::After);
 
         match *tree {
             Tree::Node(_) => unreachable!(),
@@ -96,7 +90,7 @@ impl<K: Ord+Debug> Tree<K> {
     }
 
     pub fn delete(&mut self, key: K) {
-        let tree = self.find_mut(&key, Strategy::Any);
+        let tree = self.find_mut(&key, FindStrategy::Any);
         
         *tree = if let Tree::Node(mut node) = tree.take() {
             if let Tree::Node(_) = node.right {
