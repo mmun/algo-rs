@@ -31,68 +31,57 @@ impl<K: Ord+Debug> Tree<K> {
     }
 
     pub fn has(&mut self, key: K) -> bool {
-        let tree = self.find_mut(&key, Find::Any);
+        let tree = self.find(&key, Find::Any);
 
         tree.is_node()
     }
 
     pub fn insert(&mut self, key: K) {
-        let tree = self.find_mut(&key, Find::After);
+        let tree = self.find(&key, Find::After);
 
         *tree = Tree::leaf(key);
     }
 
     pub fn delete(&mut self, key: K) {
-        let tree = self.find_mut(&key, Find::Any); 
+        let tree = self.find(&key, Find::Any);
 
         if tree.is_node() {
-            if tree.right_mut().is_node() {
+            if tree.right().is_node() {
                 let succ = {
-                    let succ = tree.right_mut().first_mut();
+                    let succ = tree.right().first();
                     let mut taken = succ.take();
-                    *succ = taken.right_mut().take();
+                    *succ = taken.right().take();
                     taken
                 };
                 tree.node_mut().key = succ.into_key();
             } else {
-                *tree = tree.left_mut().take();
+                *tree = tree.left().take();
             }
         }
     }
 
-    fn find_mut(&mut self, key: &K, strategy: Find) -> &mut Self {
-        let mut cur = self;
-
-        loop {
-            let temp = cur;
-            if temp.is_node() {
-                cur = match temp.key().cmp(key) {
-                    Less    => temp.right_mut(),
-                    Greater => temp.left_mut(),
-                    Equal   => {
-                        match strategy {
-                            Find::After => temp.right_mut(),
-                            Find::Any   => return temp
-                        }
-                    }
-                };
-            } else {
-                return temp
-            }
-        }
-    }
-
-    fn first_mut(&mut self) -> &mut Self {
+    fn find(&mut self, key: &K, strategy: Find) -> &mut Self {
         if self.is_empty() { return self }
 
-        let mut cur = self;
-        loop {
-            let temp = cur;
-            if temp.left_mut().is_node() {
-                cur = temp.left_mut()
-            } else {
-                return temp
+        match self.key().cmp(key) {
+            Less    => self.right().find(key, strategy),
+            Greater => self.left().find(key, strategy),
+            Equal   => {
+                match strategy {
+                    Find::After => self.right().find(key, strategy),
+                    Find::Any   => self
+                }
             }
+        }
+    }
+
+    fn first(&mut self) -> &mut Self {
+        if self.is_empty() { return self }
+
+        if self.left().is_node() {
+            self.left().first()
+        } else {
+            self
         }
     }
 
@@ -101,8 +90,8 @@ impl<K: Ord+Debug> Tree<K> {
 
     fn take(&mut self)      -> Self         { Tree { inner: self.inner.take() } }
     fn node_mut(&mut self)  -> &mut Node<K> { self.inner.as_mut().unwrap() }
-    fn left_mut(&mut self)  -> &mut Self    { &mut self.node_mut().left }
-    fn right_mut(&mut self) -> &mut Self    { &mut self.node_mut().right }
+    fn left(&mut self)      -> &mut Self    { &mut self.node_mut().left }
+    fn right(&mut self)     -> &mut Self    { &mut self.node_mut().right }
 
     fn node(&self)          -> &Node<K>     { self.inner.as_ref().unwrap() }
     fn key(&self)           -> &K           { &self.node().key }
