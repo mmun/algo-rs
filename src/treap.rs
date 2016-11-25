@@ -1,6 +1,8 @@
+#[macro_use] extern crate dmoj;
+extern crate rand;
+
 use std::fmt::Debug;
 use std::cmp::Ordering::*;
-use rand;
 
 use self::Dir::*;
 
@@ -9,18 +11,11 @@ pub enum Dir { Left, Right }
 
 impl Dir {
     fn flip(self) -> Self {
-        match self {
-            Left => Right,
-            Right => Left
-        }
+        if let Right = self { Left } else { Right }
     }
 
     fn smaller<T: Ord>(left: &T, right: &T) -> Self {
-        if left < right {
-            Left
-        } else {
-            Right
-        }
+        if left < right { Left } else { Right }
     }
 }
 
@@ -28,6 +23,7 @@ impl Dir {
 pub struct Node<K> {
     key: K,
     priority: u32,
+    size: u32,
     left: Treap<K>,
     right: Treap<K>,
 }
@@ -46,6 +42,7 @@ impl<K: Ord+Debug> Treap<K> {
         let node = Node {
             key: key,
             priority: rand::random(),
+            size: 0,
             left: Treap::new(),
             right: Treap::new()
         };
@@ -53,15 +50,32 @@ impl<K: Ord+Debug> Treap<K> {
         Treap { inner: Some(Box::new(node)) }
     }
 
-    pub fn has(&mut self, key: &K) -> bool {
+    pub fn size(&self) -> u32 {
+        if self.is_node() {
+            1 + self.node().size
+        } else {
+            0
+        }
+    }
+
+    pub fn select(&mut self, index: u32) -> &K {
+        let i = self.index();
+        match index.cmp(&i) {
+            Equal   => { println!("Equal: {:?}", self); flush!(); self.key() },
+            Less    => { println!("Less: {:?}", self); flush!(); self.left().select(index) },
+            Greater => { println!("Greater: {:#?}", self); flush!(); self.left().select(index - 1 - i) },
+        }
+    }
+
+    pub fn order(&mut self, key: &K) -> Option<u32> {
         if self.is_node() {
             match key.cmp(self.key()) {
-                Less    => self.left().has(key),
-                Greater => self.right().has(key),
-                Equal   => true
+                Equal   => Some(self.left().size()),
+                Less    => self.left().order(key),
+                Greater => self.right().order(key).map(|order| 1 + self.left().size() + order)
             }
         } else {
-            false
+            None
         }
     }
 
@@ -69,6 +83,7 @@ impl<K: Ord+Debug> Treap<K> {
         if self.is_node() {
             let dir = Dir::smaller(&key, self.key());
 
+            self.node_mut().size += 1;
             self.child(dir).insert(key);
            
             if self.child(dir).priority() > self.priority() {
@@ -99,6 +114,10 @@ impl<K: Ord+Debug> Treap<K> {
         }
     }
 
+    pub fn index(&self) -> u32 {
+        self.inner.as_ref().map_or(0, |ref n| n.left.size())
+    }
+
     fn rotate(&mut self, dir: Dir) {
         let mut x = self.take();
         let mut y = x.child(dir.flip()).take();
@@ -122,129 +141,42 @@ impl<K: Ord+Debug> Treap<K> {
     fn left(&mut self)      -> &mut Self    { &mut self.node_mut().left }
     fn right(&mut self)     -> &mut Self    { &mut self.node_mut().right }
     fn node(&self)          -> &Node<K>     { self.inner.as_ref().unwrap() }
+    fn inner(&self)         -> &Node<K>     { self.inner.as_ref().unwrap() }
     fn key(&self)           -> &K           { &self.node().key }
-    fn priority(&self)      -> u32          { self.node().priority }
-    
+    fn priority(&self)      -> u32          { self.node().priority }    
     fn is_node(&self)       -> bool         { self.inner.is_some() }
     fn is_empty(&self)      -> bool         { self.inner.is_none() }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    const F: bool = false;
-    const T: bool = true;
+fn main() {
+    let (n, m) = scan!(usize, usize);
 
-    #[test]
-    fn insert() {
-        let mut bst = Treap::new();
+    // let mut t = Treap::new();
+    let mut t = Treap::new();
+    for _ in 0..n { t.insert(scan!(i32)) }
 
-        bst.insert(5);
-        bst.insert(2);
+    let mut ans = 0;
+    for _ in 0..m {
+        scan!(char);
+        let op = scan!(char);
+        let arg = scan!(i32);// ^ ans;
 
-        assert_eq!(
-            (0..10).map(|i| bst.has(&i)).collect::<Vec<_>>(),
-            [F, F, T, F, F, T, F, F, F, F]
-        );
-
-        bst.insert(3);
-        bst.insert(1);
-        bst.insert(7);
-
-        assert_eq!(
-            (0..10).map(|i| bst.has(&i)).collect::<Vec<_>>(),
-            [F, T, T, T, F, T, F, T, F, F]
-        );
-    }
-
-    #[test]
-    fn insert_and_delete() {
-        let mut bst = Treap::new();
-
-        bst.insert(7);
-        bst.insert(3);
-        bst.insert(11);
-        bst.insert(1);
-        bst.insert(5);
-        bst.insert(9);
-        bst.insert(13);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, T, F, T, F, T, F, T, F, T, F, T, F, T, F]);
-
-        bst.insert(0);
-        bst.insert(2);
-        bst.insert(4);
-        bst.insert(6);
-        bst.insert(8);
-        bst.insert(10);
-        bst.insert(12);
-        bst.insert(14);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]);
-
-        bst.delete(&7);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, T, T, T, T, T, T, F, T, T, T, T, T, T, T]);
-        bst.delete(&3);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, T, T, F, T, T, T, F, T, T, T, T, T, T, T]);
-        bst.delete(&11);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, T, T, F, T, T, T, F, T, T, T, F, T, T, T]);
-        bst.delete(&1);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, F, T, F, T, T, T, F, T, T, T, F, T, T, T]);
-        bst.delete(&5);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, F, T, F, T, F, T, F, T, T, T, F, T, T, T]);
-        bst.delete(&9);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, F, T, F, T, F, T, F, T, F, T, F, T, T, T]);
-        bst.delete(&13);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [T, F, T, F, T, F, T, F, T, F, T, F, T, F, T]);
-        bst.delete(&0);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, T, F, T, F, T, F, T, F, T, F, T, F, T]);
-        bst.delete(&2);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, F, F, T, F, T, F, T, F, T, F, T, F, T]);
-        bst.delete(&4);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, F, F, F, F, T, F, T, F, T, F, T, F, T]);
-        bst.delete(&6);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, F, F, F, F, F, F, T, F, T, F, T, F, T]);
-        bst.delete(&8);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, F, F, F, F, F, F, F, F, T, F, T, F, T]);
-        bst.delete(&10);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, F, F, F, F, F, F, F, F, F, F, T, F, T]);
-        bst.delete(&12);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, F, F, F, F, F, F, F, F, F, F, F, F, T]);
-        bst.delete(&14);
-        assert_eq!((0..15).map(|i| bst.has(&i)).collect::<Vec<_>>(), [F, F, F, F, F, F, F, F, F, F, F, F, F, F, F]);
-    }
-
-    #[test]
-    fn insert_and_delete_duplicates() {
-        let mut bst = Treap::new();
-
-        bst.insert(0);
-        bst.insert(1);
-        bst.insert(0);
-        bst.insert(1);
-        bst.insert(0);
-        bst.insert(1);
-
-        println!("{:#?}", bst);
-
-        assert_eq!(
-            (0..2).map(|i| bst.has(&i)).collect::<Vec<_>>(),
-            [T, T]
-        );
-
-        bst.delete(&0);
-        bst.delete(&0);
-        bst.delete(&1);
-
-        assert_eq!(
-            (0..2).map(|i| bst.has(&i)).collect::<Vec<_>>(),
-            [T, T]
-        );
-
-        bst.delete(&0);
-
-        assert_eq!(
-            (0..2).map(|i| bst.has(&i)).collect::<Vec<_>>(),
-            [F, T]
-        );
+        match op {
+            'I' => t.insert(arg),
+            'R' => t.delete(&arg),
+            'S' => {
+                ans = *t.select(arg as u32);
+                println!("{}", ans);
+            },
+            'L' => {
+                ans = match t.order(&arg) {
+                    Some(i) => i as i32 + 1,
+                    None => -1
+                };
+                println!("{}", ans);
+            },
+            _ => unreachable!()
+        }
     }
 }
